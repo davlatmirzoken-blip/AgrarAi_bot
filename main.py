@@ -5,25 +5,23 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from openai import AsyncOpenAI
+from google import genai
 from rapidfuzz import process, fuzz
 from aiohttp import web
 
 # Kalitlarni o'zgaruvchilarga olish
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8991596787:AAFupK5TrDV9LB_L7ESAmIkJwOptFb2Oc34")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6LOgE0q3zqFRFgz7DLOkURaR5Alw74YfZiTD3afHuMHxg")
 
-# Bot va OpenAI klientini ishga tushirish
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-# Kalit so'zlarni xatoliklar bilan moslashtirish uchun lug'at
 KEYWORDS = {
     "start": ["start", "boshlash", "stard", "stat", "boshla"],
-    "help": ["yordam", "yordam ber", "xelp", "help", "yordamne"]
+    "help": ["yordam", "yordam ber", "xelp", "help"]
 }
 
 def match_keyword(text: str) -> str:
@@ -39,8 +37,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     welcome_text = (
         "🌱 **Oʻzbekiston Qishloq Xoʻjaligi AI Yordamchisiga xush kelibsiz!**\n\n"
-        "Men OpenAI (ChatGPT) va aqlli qidiruv tizimi bilan ishlayman. "
-        "Harfiy xatolar bilan yozsangiz ham sizni tushunaman!\n\n"
         "Menga oʻzingizni qiziqtirgan savolni, hudud va ekin haqida yozing."
     )
     await message.answer(welcome_text, parse_mode="Markdown")
@@ -54,36 +50,34 @@ async def handle_all_messages(message: types.Message):
         await cmd_start(message, None)
         return
     elif matched_intent == "help":
-        await message.answer("Siz menga qishloq xoʻjaligi, yer turlari yoki ekin navlari boʻyicha xohlagan koʻrinishda savol berishingiz mumkin.")
+        await message.answer("Siz menga qishloq xoʻjaligi boʻyicha xohlagan savolingizni berishingiz mumkin.")
         return
 
-    wait_msg = await message.answer("⏳ ChatGPT tahlil qilmoqda, iltimos kuting...")
+    # Kuting matni Agrar AI ga o'zgartirildi
+    wait_msg = await message.answer("⏳ Agrar AI tahlil qilmoqda, iltimos kuting...")
 
     system_instruction = (
-        "Siz Oʻzbekiston qishloq xoʻjaligi, tuproq-iqlim sharoiti va ekin navlari boʻyicha professional agronom AI ekspertisiz. "
-        "Foydalanuvchi matnda harfiy xatolar qilgan boʻlsa ham uning maqsadi va mazmunini toʻgʻri anglab, "
-        "Oʻzbekiston yerlaridan unumli foydalanish va yuqori sifatli ekin yetishtirish boʻyicha aniq, ilmiy va tushunarli javob bering."
+        "Siz Oʻzbekiston qishloq xoʻjaligi va ekin navlari boʻyicha professional agronom AI ekspertisiz. "
+        "Foydalanuvchiga aniq va tushunarli javob bering."
     )
 
     try:
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",  # Tejamkor va juda tez model
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": user_text}
-            ],
-            temperature=0.5
+        response = ai_client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=f"Foydalanuvchi soʻrovi: {user_text}",
+            config={
+                "system_instruction": system_instruction,
+                "temperature": 0.5
+            }
         )
-        ai_reply = response.choices[0].message.content
         await wait_msg.delete()
-        await message.answer(ai_reply, parse_mode="Markdown")
+        await message.answer(response.text, parse_mode="Markdown")
     except Exception as e:
         await wait_msg.delete()
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
-# Render Web Service uchun portni ochiq tutuvchi yengil HTTP server
 async def handle_health_check(request):
-    return web.Response(text="Agrar AI Bot (OpenAI) muvaffaqiyatli ishlamoqda!")
+    return web.Response(text="Agrar AI Bot ishlamoqda!")
 
 async def start_web_server():
     app = web.Application()
@@ -93,10 +87,8 @@ async def start_web_server():
     port = int(os.getenv("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"Web-server port {port} da ishga tushdi.")
 
 async def main():
-    print("Bot va Web-server ishga tushmoqda...")
     await asyncio.gather(
         start_web_server(),
         dp.start_polling(bot)

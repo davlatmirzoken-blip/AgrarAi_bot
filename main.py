@@ -4,24 +4,26 @@ import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from google import genai
 from rapidfuzz import process, fuzz
+from aiohttp import web
 
+# Kalitlarni o'zgaruvchilarga olish
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8991596787:AAFupK5TrDV9LB_L7ESAmIkJwOptFb2Oc34")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6KXay6iz982uPcHttnpjT_-stdUc8u2OmQWeya0ysuI9w")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6KyGENeMae18dCvtFc7qo8ToT2mOSwrQeZZQwSUBH7c_A")
-
+# Bot va AI klientini ishga tushirish
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
+# Kalit so'zlarni xatoliklar bilan moslashtirish uchun lug'at
 KEYWORDS = {
-    "start": ["start", "boshlash", "stard", "stat"],
-    "help": ["yordam", "yordam ber", "xelp", "help"]
+    "start": ["start", "boshlash", "stard", "stat", "boshla"],
+    "help": ["yordam", "yordam ber", "xelp", "help", "yordamne"]
 }
 
 def match_keyword(text: str) -> str:
@@ -78,10 +80,27 @@ async def handle_all_messages(message: types.Message):
         await wait_msg.delete()
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
+# Render Web Service uchun portni ochiq tutuvchi yengil HTTP server
+async def handle_health_check(request):
+    return web.Response(text="Agrar AI Bot muvaffaqiyatli ishlamoqda!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Web-server port {port} da ishga tushdi.")
+
 async def main():
-    print("Bot Gemini AI bilan ishga tushdi...")
-    await dp.start_polling(bot)
+    print("Bot va Web-server ishga tushmoqda...")
+    await asyncio.gather(
+        start_web_server(),
+        dp.start_polling(bot)
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
-  
+            

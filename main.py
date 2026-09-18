@@ -9,8 +9,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from google import genai
 from rapidfuzz import process, fuzz
 
-BOT_TOKEN = os.getenv("8991596787:AAFupK5TrDV9LB_L7ESAmIkJwOptFb2Oc34")
-GEMINI_API_KEY = os.getenv("AQ.Ab8RN6KyGENeMae18dCvtFc7qo8ToT2mOSwrQeZZQwSUBH7c_A")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8991596787:AAFupK5TrDV9LB_L7ESAmIkJwOptFb2Oc34")
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6KyGENeMae18dCvtFc7qo8ToT2mOSwrQeZZQwSUBH7c_A")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())

@@ -5,18 +5,18 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from google import genai
+from openai import AsyncOpenAI
 from rapidfuzz import process, fuzz
 from aiohttp import web
 
 # Kalitlarni o'zgaruvchilarga olish
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8991596787:AAFupK5TrDV9LB_L7ESAmIkJwOptFb2Oc34")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6KXay6iz982uPcHttnpjT_-stdUc8u2OmQWeya0ysuI9w")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
 
-# Bot va AI klientini ishga tushirish
+# Bot va OpenAI klientini ishga tushirish
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -39,7 +39,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     welcome_text = (
         "🌱 **Oʻzbekiston Qishloq Xoʻjaligi AI Yordamchisiga xush kelibsiz!**\n\n"
-        "Men Google Gemini AI va aqlli qidiruv tizimi bilan ishlayman. "
+        "Men OpenAI (ChatGPT) va aqlli qidiruv tizimi bilan ishlayman. "
         "Harfiy xatolar bilan yozsangiz ham sizni tushunaman!\n\n"
         "Menga oʻzingizni qiziqtirgan savolni, hudud va ekin haqida yozing."
     )
@@ -57,7 +57,7 @@ async def handle_all_messages(message: types.Message):
         await message.answer("Siz menga qishloq xoʻjaligi, yer turlari yoki ekin navlari boʻyicha xohlagan koʻrinishda savol berishingiz mumkin.")
         return
 
-    wait_msg = await message.answer("⏳ Gemini AI tahlil qilmoqda, iltimos kuting...")
+    wait_msg = await message.answer("⏳ ChatGPT tahlil qilmoqda, iltimos kuting...")
 
     system_instruction = (
         "Siz Oʻzbekiston qishloq xoʻjaligi, tuproq-iqlim sharoiti va ekin navlari boʻyicha professional agronom AI ekspertisiz. "
@@ -66,23 +66,24 @@ async def handle_all_messages(message: types.Message):
     )
 
     try:
-        response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"Foydalanuvchi soʻrovi: {user_text}",
-            config={
-                "system_instruction": system_instruction,
-                "temperature": 0.5
-            }
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",  # Tejamkor va juda tez model
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_text}
+            ],
+            temperature=0.5
         )
+        ai_reply = response.choices[0].message.content
         await wait_msg.delete()
-        await message.answer(response.text, parse_mode="Markdown")
+        await message.answer(ai_reply, parse_mode="Markdown")
     except Exception as e:
         await wait_msg.delete()
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
 # Render Web Service uchun portni ochiq tutuvchi yengil HTTP server
 async def handle_health_check(request):
-    return web.Response(text="Agrar AI Bot muvaffaqiyatli ishlamoqda!")
+    return web.Response(text="Agrar AI Bot (OpenAI) muvaffaqiyatli ishlamoqda!")
 
 async def start_web_server():
     app = web.Application()
@@ -103,4 +104,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-            

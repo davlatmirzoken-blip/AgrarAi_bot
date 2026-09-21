@@ -1,4 +1,0 @@
-aiogram
-openai
-rapidfuzz
-aiohttp

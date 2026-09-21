@@ -1,6 +1,6 @@
 services:
-  - type: worker
-    name: agro-gemini-bot
+  - type: web
+    name: agrar-ai-bot
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py

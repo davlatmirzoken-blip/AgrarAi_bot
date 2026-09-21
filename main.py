@@ -1,5 +1,7 @@
 import os
 import logging
+import asyncio
+from aiohttp import web
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
@@ -23,12 +25,12 @@ TELEGRAM_BOT_TOKEN = os.getenv("8671816486:AAHTmwW0ttN1a0SitvMNLb-BgIqT7xH8owQ")
 GEMINI_API_KEY = os.getenv("AQ.Ab8RN6I0Q8biDwdCaA8W6IgKVr0iwLxi8NaeWyqkSITiiJIAaA")
 
 if not TELEGRAM_BOT_TOKEN or not GEMINI_API_KEY:
-    raise ValueError("TELEGRAM_BOT_TOKEN va GEMINI_API_KEY Render Environment Variables'da kiritilishi shart!")
+    raise ValueError("TELEGRAM_BOT_TOKEN va GEMINI_API_KEY muhit o'zgaruvchilarida berilishi shart!")
 
-# Gemini Mijozini yaratish
+# Gemini client yaratish
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Telegram tugmalari
+# Tugmalar klaviaturasi
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         [KeyboardButton("ℹ️ Bot haqida")],
@@ -59,17 +61,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(welcome_text, reply_markup=MAIN_KEYBOARD, parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Foydalanuvchidan kelgan xabarlarni qayta ishlash."""
+    """Foydalanuvchi xabarlariga javob berish."""
     user_text = update.message.text.strip()
 
     if user_text == "ℹ️ Bot haqida":
         about_text = (
             "🤖 **Bot haqida:**\n\n"
-            "Ushbu bot **Agrar AI** bo'lib, Andijon qishloq xo'jaligi va agrotexnologiyalar instituti mutaxassisligi yo'nalishida xizmat qiladi.\n\n"
+            "Ushbu bot **Agrar AI** bo'lib, Andijon qishloq xo'jaligi va agrotexnologiyalar instituti tomonidan taqdim etilgan.\n\n"
             "Bot quyidagi sohalarda yordam bera oladi:\n"
             "• Agrotexnologiyalar va dehqonchilik\n"
-            "• Qishloq xo'jaligi ekinlari va kasalliklarga qarshi kurash\n"
-            "• Chorvachilik, parrandachilik hamda ularni boqish\n\n"
+            "• Qishloq xo'jaligi ekinlari parvarishi hamda kasalliklarga qarshi kurash\n"
+            "• Chorvachilik, parrandachilik va ularni boqish\n\n"
             "Savolingizni matn shaklida yozib yuborishingiz mumkin!"
         )
         await update.message.reply_text(about_text, parse_mode="Markdown")
@@ -81,16 +83,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    # Gemini AI'ga so'rov yuborish
     try:
         await update.message.chat.send_action("typing")
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=user_text,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.3,
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=user_text,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.3,
+                ),
             ),
         )
 
@@ -101,15 +106,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Gemini API xatoligi: {e}")
         await update.message.reply_text("Kechirasiz, javob tayyorlashda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.")
 
-def main() -> None:
-    """Botni ishga tushirish."""
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+# Render portini ushlab turish uchun HTTP Server
+async def handle_ping(request):
+    return web.Response(text="Bot is running active on Render Free Web Service!")
 
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    app.router.add_get("/health", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Render avtomatik beradigan PORT o'zgaruvchisi (standart: 10000)
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Dummy HTTP server {port}-portda ishga tushdi.")
+
+async def main_async():
+    # Dumb Web server va Telegram Botni birga ishga tushirish
+    await start_web_server()
+
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Bot ishga tushdi...")
-    application.run_polling()
+    async with application:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(drop_pending_updates=True)
+        logger.info("Bot ishga tushdi...")
+        # Cheksiz davom ettirish
+        await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main_async())

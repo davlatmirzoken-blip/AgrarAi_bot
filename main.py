@@ -6,8 +6,8 @@ from google import genai
 from aiohttp import web
 
 # Kalitlarni olish
-BOT_TOKEN = os.getenv("8991596787:AAG5r8-bQusCX4BSsQBvqEZAMuA5OBgrYRc")
-GEMINI_API_KEY = os.getenv("AQ.Ab8RN6K9lkIAzcK-f9rMRRLHXxKRg-shPWNv55Uh50cODg4N8A")
+BOT_TOKEN = os.getenv("8671816486:AAHTmwW0ttN1a0SitvMNLb-BgIqT7xH8owQ")
+GEMINI_API_KEY = os.getenv("AQ.Ab8RN6JPADhqqBHkv3bnhTNTcNlmJBq5wNVrtsa3kQi1-JOi4Q")
 
 # Yangi Gemini SDK
 client = genai.Client(api_key=GEMINI_API_KEY)

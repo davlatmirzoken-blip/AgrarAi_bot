@@ -4,8 +4,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 import google.generativeai as genai
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+BOT_TOKEN = os.getenv("8991596787:AAG5r8-bQusCX4BSsQBvqEZAMuA5OBgrYRc")
+GEMINI_API_KEY = os.getenv("AQ.Ab8RN6K9lkIAzcK-f9rMRRLHXxKRg-shPWNv55Uh50cODg4N8A")
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")

@@ -3,7 +3,7 @@ import time
 import asyncio
 from io import BytesIO
 from threading import Thread
-from Flask import Flask
+from flask import Flask
 from PyPDF2 import PdfReader
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes

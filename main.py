@@ -84,30 +84,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     full_prompt = f"{SYSTEM_INSTRUCTION}\n{context_data}\n\nFoydalanuvchi savoli: {user_text}"
 
-    # Полностью совместимые имена моделей для библиотеки google-genai
-    models_to_try = ['gemini-2.5-flash', 'gemini-2.0-flash']
+    # Используем рекомендованную модель gemini-3.6-flash
+    models_to_try = ['gemini-3.6-flash']
     
     success = False
     last_error = ""
     
-    for model_name in models_to_try:
-        try:
-            response = gemini_client.models.generate_content(
-                model=model_name,
-                contents=full_prompt,
-            )
-            await sent_message.edit_text(response.text)
-            success = True
+    for attempt in range(3):
+        for model_name in models_to_try:
+            try:
+                response = gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=full_prompt,
+                )
+                await sent_message.edit_text(response.text)
+                success = True
+                break
+            except Exception as e:
+                last_error = str(e)
+                if "429" in last_error or "RESOURCE_EXHAUSTED" in last_error:
+                    time.sleep(3)
+                    continue
+                if "503" in last_error or "UNAVAILABLE" in last_error:
+                    time.sleep(2)
+                    continue
+        if success:
             break
-        except Exception as e:
-            last_error = str(e)
-            # Переход к следующей модели при ошибках доступа (404) или превышения лимитов (429)
-            if "404" in last_error or "429" in last_error or "RESOURCE_EXHAUSTED" in last_error:
-                continue
-            # Задержка при временной перегрузке сервера (503)
-            if "503" in last_error or "UNAVAILABLE" in last_error:
-                time.sleep(2)
-                continue
 
     if not success:
         await sent_message.edit_text(f"Xatolik yuz berdi: {last_error}")

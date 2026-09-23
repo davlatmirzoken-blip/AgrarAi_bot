@@ -8,16 +8,16 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google import genai
 
-# Kalitlar
+# API ключи
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# PDF ma'lumotlarini saqlash uchun baza (in-memory)
+# Хранилище PDF
 pdf_database = {}
 
-# System Prompt - Bot shaxsiyati va qoidalari
+# Системная инструкция
 SYSTEM_INSTRUCTION = """
 Siz Andijon qishloq xo'jaligi va agrotechnologiyalar institutining rasmiy sun'iy intellekt assistentisiz.
 Sizning vazifangiz va qoidalaringiz:
@@ -27,7 +27,6 @@ Sizning vazifangiz va qoidalaringiz:
 4. Agar foydalanuvchi qishloq xo'jaligiga aloqador bo'lmagan (masalan: dasturlash, kino, siyosat va h.k.) savol bersa, muloyimlik bilan faqat qishloq xo'jaligi va institut faoliyatiga oid savollarga javob bera olishingizni ayting.
 """
 
-# Render uchun Flask server
 app = Flask(__name__)
 
 @app.route('/')
@@ -38,7 +37,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-# /start buyrug'i
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "Assalomu alaykum!\n\n"
@@ -48,7 +46,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
-# PDF fayllarni qabul qilish
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
     if document.mime_type == 'application/pdf':
@@ -76,7 +73,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Iltimos, faqat PDF formatidagi fayllarni yuboring.")
 
-# Matnli xabarlarni qayta ishlash va avtomatik zaxira modellar
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     user_id = update.message.from_user.id
@@ -88,33 +84,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     full_prompt = f"{SYSTEM_INSTRUCTION}\n{context_data}\n\nFoydalanuvchi savoli: {user_text}"
 
-    # Ketma-ket sinab ko'riladigan modellar ro'yxati
-    models_to_try = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-3.6-flash']
+    # Актуальный список моделей
+    models_to_try = ['gemini-3.6-flash', 'gemini-1.5-flash']
     
     success = False
-    for attempt in range(3):
-        for model_name in models_to_try:
-            try:
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=full_prompt,
-                )
-                await sent_message.edit_text(response.text)
-                success = True
-                break
-            except Exception as e:
-                # 429 - Limiti tugagan bo'lsa, keyingi modelga o'tadi
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    continue
-                # 503 - Server band bo'lsa, 2 soniya kutadi
-                if ("503" in str(e) or "UNAVAILABLE" in str(e)) and attempt < 2:
-                    time.sleep(2)
-                    break
-                await sent_message.edit_text(f"Xatolik yuz berdi: {str(e)}")
-                success = True
-                break
-        if success:
+    last_error = ""
+    
+    for model_name in models_to_try:
+        try:
+            response = gemini_client.models.generate_content(
+                model=model_name,
+                contents=full_prompt,
+            )
+            await sent_message.edit_text(response.text)
+            success = True
             break
+        except Exception as e:
+            last_error = str(e)
+            # Если модель не найдена (404) или исчерпан лимит (429), пробуем следующую
+            if "404" in last_error or "429" in last_error or "RESOURCE_EXHAUSTED" in last_error:
+                continue
+            # Если сервер перегружен (503), делаем паузу и пробуем следующую
+            if "503" in last_error or "UNAVAILABLE" in last_error:
+                time.sleep(2)
+                continue
+
+    if not success:
+        await sent_message.edit_text(f"Xatolik yuz berdi: {last_error}")
 
 def main():
     server_thread = Thread(target=run_flask)

@@ -84,8 +84,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     full_prompt = f"{SYSTEM_INSTRUCTION}\n{context_data}\n\nFoydalanuvchi savoli: {user_text}"
 
-    # Актуальный список моделей
-    models_to_try = ['gemini-3.6-flash', 'gemini-1.5-flash']
+    # Полностью совместимые имена моделей для библиотеки google-genai
+    models_to_try = ['gemini-2.5-flash', 'gemini-2.0-flash']
     
     success = False
     last_error = ""
@@ -101,10 +101,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
         except Exception as e:
             last_error = str(e)
-            # Если модель не найдена (404) или исчерпан лимит (429), пробуем следующую
+            # Переход к следующей модели при ошибках доступа (404) или превышения лимитов (429)
             if "404" in last_error or "429" in last_error or "RESOURCE_EXHAUSTED" in last_error:
                 continue
-            # Если сервер перегружен (503), делаем паузу и пробуем следующую
+            # Задержка при временной перегрузке сервера (503)
             if "503" in last_error or "UNAVAILABLE" in last_error:
                 time.sleep(2)
                 continue

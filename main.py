@@ -1,5 +1,5 @@
 import os
-import time
+import asyncio
 from io import BytesIO
 from threading import Thread
 from flask import Flask
@@ -8,23 +8,26 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google import genai
 
-# API ключи
+# API kalitlar
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+if not TELEGRAM_TOKEN or not GEMINI_API_KEY:
+    raise ValueError("TELEGRAM_TOKEN yoki GEMINI_API_KEY Render Environment Variables'da topilmadi!")
+
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Хранилище PDF
+# PDF ma'lumotlar bazasi
 pdf_database = {}
 
-# Системная инструкция
+# Tizim yo'riqnomasi (ixchamlashtirilgan, AI tezroq qayta ishlashi uchun)
 SYSTEM_INSTRUCTION = """
-Siz Andijon qishloq xo'jaligi va agrotechnologiyalar institutining rasmiy sun'iy intellekt assistentisiz.
-Sizning vazifangiz va qoidalaringiz:
-1. Hech qachon "Men Gemini AI'man" deb aytmang. Har doim o'zingizni Andijon qishloq xo'jaligi va agrotechnologiyalar institutining AIsi sifatida tanishtiring.
-2. Institut haqida so'rashsa: Andijon qishloq xo'jaligi va agrotechnologiyalar instituti Farg'ona vodiysida va mamlakatimizda agrar sohada yetuk mutassislar, agronomlar va veterinarlarni tayyorlaydigan yetakchi oliy ta'lim muassasasi ekanligini faxr bilan ayting.
-3. Siz FAQAT qishloq xo'jaligi, ekinlar, dehqonchilik, chorvachilik, parrandachilik, agrotexnologiyalar va veterinariya mavzularida javob berasiz.
-4. Agar foydalanuvchi qishloq xo'jaligiga aloqador bo'lmagan (masalan: dasturlash, kino, siyosat va h.k.) savol bersa, muloyimlik bilan faqat qishloq xo'jaligi va institut faoliyatiga oid savollarga javob bera olishingizni ayting.
+Siz Andijon qishloq xo'jaligi va agrotechnologiyalar institutining AI assistentisiz.
+Qoidalar:
+1. O'zingizni har doim institut assistenti deb tanishtiring (Gemini AI demang).
+2. Faqat qishloq xo'jaligi, ekinlar, chorvachilik, agrotexnologiyalar va institut faoliyatiga oid savollarga javob bering.
+3. Boshqa mavzular bo'lsa, muloyimlik bilan faqat agrar sohada yordam bera olishingizni ayting.
+4. Javoblaringiz londa, aniq va tushunarli bo'lsin.
 """
 
 app = Flask(__name__)
@@ -40,38 +43,42 @@ def run_flask():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "Assalomu alaykum!\n\n"
-        "Men **Andijon qishloq xo'jaligi va agrotechnologiyalar instituti**ning sun'iy intellekt assistentiman. "
-        "Qishloq xo'jaligi, ekinlar parvarishi, chorvachilik va institutimiz haqidagi barcha savollaringizga javob beraman.\n\n"
-        "Shuningdek, menga kitob yoki qo'llanma (PDF fayl) yuborsangiz, uni bazamga saqlab olaman va undagi ma'lumotlar bo'yicha savollaringizga javob beraman!"
+        "Men **Andijon qishloq xo'jaligi va agrotechnologiyalar instituti**ning sun'iy intellekt assistentiman.\n"
+        "Qishloq xo'jaligi va institutimiz bo'yicha savollaringizni berishingiz mumkin.\n\n"
+        "Shuningdek, PDF kitob yuklasangiz, undan foydalanib javob beraman!"
     )
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
     if document.mime_type == 'application/pdf':
-        sent_msg = await update.message.reply_text("PDF fayl qabul qilindi. Ma'lumotlar bazaga yuklanmoqda...")
+        sent_msg = await update.message.reply_text("PDF fayl qabul qilindi. O'qilmoqda...")
         try:
             file = await context.bot.get_file(document.file_id)
             file_bytes = await file.download_as_bytearray()
             
             pdf_reader = PdfReader(BytesIO(file_bytes))
             extracted_text = ""
-            for page in pdf_reader.pages:
+            for page in pdf_reader.pages[:50]:  # Tezlik uchun dastlabki 50 sahifagacha chegaralandi
                 text = page.extract_text()
                 if text:
                     extracted_text += text + "\n"
             
             user_id = update.message.from_user.id
-            if user_id not in pdf_database:
-                pdf_database[user_id] = ""
+            pdf_database[user_id] = f"\n--- {document.file_name} ---\n" + extracted_text[:15000]
             
-            pdf_database[user_id] += f"\n--- {document.file_name} ---\n" + extracted_text
-            
-            await sent_msg.edit_text(f"<b>{document.file_name}</b> muvaffaqiyatli o'qildi va xotiraga saqlandi! Endi ushbu kitob bo'yicha savol berishingiz mumkin.", parse_mode="HTML")
+            await sent_msg.edit_text(f"<b>{document.file_name}</b> xotiraga saqlandi! Savolingizni berishingiz mumkin.", parse_mode="HTML")
         except Exception as e:
-            await sent_msg.edit_text(f"PDF faylni o'qishda xatolik yuz berdi: {str(e)}")
+            await sent_msg.edit_text(f"PDF faylni o'qishda xatolik: {str(e)}")
     else:
-        await update.message.reply_text("Iltimos, faqat PDF formatidagi fayllarni yuboring.")
+        await update.message.reply_text("Iltimos, faqat PDF formatidagi fayl yuboring.")
+
+# AI so'rovini асинхрон (фонда) bajarish funksiyasi (Bot qotib qolmasligi uchun)
+def call_gemini_api(model_name, prompt):
+    return gemini_client.models.generate_content(
+        model=model_name,
+        contents=prompt
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
@@ -80,39 +87,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context_data = ""
     if user_id in pdf_database:
-        context_data = f"\n\nFoydalanuvchi yuklagan PDF kitoblar/baza ma'lumotlari:\n{pdf_database[user_id][:10000]}"
+        context_data = f"\n\nPDF ma'lumotlari:\n{pdf_database[user_id][:4000]}"
 
-    full_prompt = f"{SYSTEM_INSTRUCTION}\n{context_data}\n\nFoydalanuvchi savoli: {user_text}"
+    full_prompt = f"{SYSTEM_INSTRUCTION}\n{context_data}\n\nSavol: {user_text}"
 
-    # Используем рекомендованную модель gemini-3.6-flash
-    models_to_try = ['gemini-3.6-flash']
+    # Birinchi navbatda eng tezkor va barqaror model ishlatiladi
+    models_to_try = ['gemini-1.5-flash', 'gemini-3.6-flash']
     
     success = False
     last_error = ""
+    loop = asyncio.get_running_loop()
     
-    for attempt in range(3):
-        for model_name in models_to_try:
-            try:
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=full_prompt,
-                )
-                await sent_message.edit_text(response.text)
-                success = True
-                break
-            except Exception as e:
-                last_error = str(e)
-                if "429" in last_error or "RESOURCE_EXHAUSTED" in last_error:
-                    time.sleep(3)
-                    continue
-                if "503" in last_error or "UNAVAILABLE" in last_error:
-                    time.sleep(2)
-                    continue
-        if success:
+    for model_name in models_to_try:
+        try:
+            # API сўровини ижрочи оқида (thread) юбориш — Telegram ботни ушлаб қолмайди
+            response = await loop.run_in_executor(None, call_gemini_api, model_name, full_prompt)
+            await sent_message.edit_text(response.text)
+            success = True
             break
+        except Exception as e:
+            last_error = str(e)
+            if "429" in last_error or "RESOURCE_EXHAUSTED" in last_error or "404" in last_error:
+                continue
+            if "503" in last_error or "UNAVAILABLE" in last_error:
+                await asyncio.sleep(1)  # time.sleep o'rniga asinxron kutish
+                continue
 
     if not success:
-        await sent_message.edit_text(f"Xatolik yuz berdi: {last_error}")
+        await sent_message.edit_text("Hozirda Google AI serverlari band yoki kunlik limit tugadi. Birozdan so'ng qayta urinib ko'ring!")
 
 def main():
     server_thread = Thread(target=run_flask)
@@ -125,7 +127,7 @@ def main():
     application.add_handler(MessageHandler(filters.Document.PDF, handle_document))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Andijon QXAI Boti ishga tushdi...")
+    print("Andijon QXAI Boti tezkor rejimda ishga tushdi...")
     application.run_polling()
 
 if __name__ == "__main__":
